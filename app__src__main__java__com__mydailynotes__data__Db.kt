@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao interface AppDao {
     @Query("SELECT * FROM Task ORDER BY start") fun tasks(): Flow<List<Task>>
     @Query("SELECT * FROM Task WHERE id=:id") suspend fun task(id: Long): Task?
-    @Query("SELECT * FROM Task WHERE status!=2 AND end>:now") suspend fun upcoming(now: Long): List<Task>
+    @Query("SELECT * FROM Task WHERE status!=2 AND `end`>:now") suspend fun upcoming(now: Long): List<Task>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(t: Task): Long
     @Query("DELETE FROM Task WHERE id=:id") suspend fun deleteTask(id: Long)
     @Query("SELECT * FROM Note ORDER BY date DESC, id DESC") fun notes(): Flow<List<Note>>

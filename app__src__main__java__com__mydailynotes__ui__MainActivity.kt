@@ -1,7 +1,8 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.mydailynotes.ui
 import android.Manifest
-import android.app.*
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -19,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.graphics.Color
