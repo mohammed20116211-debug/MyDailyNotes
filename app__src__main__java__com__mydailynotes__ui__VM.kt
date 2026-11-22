@@ -2,6 +2,7 @@ package com.mydailynotes.ui
 import android.app.Application
 import android.widget.Toast
 import androidx.lifecycle.*
+import com.mydailynotes.CrashLog
 import com.mydailynotes.data.*
 import com.mydailynotes.scheduler.Scheduler
 import kotlinx.coroutines.*
@@ -21,24 +22,26 @@ class VM(private val app: Application) : AndroidViewModel(app) {
     val notes = d.notes().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val hist = d.hist().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private fun toast(s: String) = Toast.makeText(app, s, Toast.LENGTH_SHORT).show()
+    private fun safe(block: suspend () -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        try { block() } catch (e: Throwable) { CrashLog.log(app, e); withContext(Dispatchers.Main) { toast("خطأ: ${e.message}") } }
+    }
     private suspend fun log(t: Task, op: String) =
         d.addHist(Hist(title = t.title, op = op, time = System.currentTimeMillis(), info = "${t.start.ld()} ${t.start.tm()} - ${t.end.tm()}"))
 
-    fun save(t: Task) = viewModelScope.launch(Dispatchers.IO) {
+    fun save(t: Task) = safe {
         val isNew = t.id == 0L; val id = d.upsert(t); val s = if (isNew) t.copy(id = id) else t
         Scheduler.schedule(app, s); log(s, if (isNew) "إضافة" else "تعديل")
     }
-    fun delete(t: Task) = viewModelScope.launch(Dispatchers.IO) { Scheduler.cancel(app, t.id); d.deleteTask(t.id); log(t, "حذف") }
-    fun toggleDone(t: Task) = viewModelScope.launch(Dispatchers.IO) {
+    fun delete(t: Task) = safe { Scheduler.cancel(app, t.id); d.deleteTask(t.id); log(t, "حذف") }
+    fun toggleDone(t: Task) = safe {
         if (t.status == 2) { val s = t.copy(status = 0); d.upsert(s); Scheduler.schedule(app, s); log(s, "إلغاء الإنجاز") }
         else { val s = t.copy(status = 2); d.upsert(s); Scheduler.cancel(app, t.id); log(s, "إنجاز") }
     }
-    // التأجيل تعديل للمهمة الأصلية: نفس الوقت والمدة، يوم واحد للأمام، بلا نسخة جديدة
-    fun postpone(t: Task) = viewModelScope.launch(Dispatchers.IO) {
+    fun postpone(t: Task) = safe {
         val s = t.copy(start = t.start.ldt().plusDays(1).ms(), end = t.end.ldt().plusDays(1).ms(), status = 0)
         d.upsert(s); Scheduler.schedule(app, s); log(s, "تأجيل إلى الغد")
         withContext(Dispatchers.Main) { toast("تم التأجيل إلى الغد") }
     }
-    fun saveNote(n: Note) = viewModelScope.launch(Dispatchers.IO) { d.upsertNote(n) }
-    fun deleteNote(n: Note) = viewModelScope.launch(Dispatchers.IO) { d.deleteNote(n) }
+    fun saveNote(n: Note) = safe { d.upsertNote(n) }
+    fun deleteNote(n: Note) = safe { d.deleteNote(n) }
 }

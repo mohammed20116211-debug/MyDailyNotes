@@ -1,5 +1,4 @@
 package com.mydailynotes.notifications
-import android.annotation.SuppressLint
 import android.app.*
 import android.content.*
 import android.media.*
@@ -12,40 +11,36 @@ import com.mydailynotes.ui.tm
 object Notifier {
     fun channels(c: Context) {
         val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("start", "تنبيه بداية المهمة", NotificationManager.IMPORTANCE_HIGH).apply {
-            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-            enableVibration(true); vibrationPattern = longArrayOf(0, 800, 600, 800, 600, 800)
-        })
-        nm.createNotificationChannel(NotificationChannel("end", "تنبيه نهاية المهمة", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION).build())
-        })
+        val ringAttr = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+        nm.createNotificationChannel(NotificationChannel("start", "تنبيه البداية (احتياطي)", NotificationManager.IMPORTANCE_HIGH).apply {
+            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), ringAttr); enableVibration(true) })
+        nm.createNotificationChannel(NotificationChannel("end", "تنبيه النهاية (احتياطي)", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()) })
+        nm.createNotificationChannel(NotificationChannel("start_s", "تنبيه بداية المهمة", NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null); enableVibration(false) })
+        nm.createNotificationChannel(NotificationChannel("end_s", "تنبيه نهاية المهمة", NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null) })
     }
-    private fun open(c: Context, id: Long) = PendingIntent.getActivity(c, id.toInt(),
-        Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    private val F = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    private fun open(c: Context, id: Long, ack: Boolean) = PendingIntent.getActivity(c, id.toInt() + (if (ack) 2_000_000 else 3_000_000),
+        Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("ack", ack), F)
+    private fun stopPi(c: Context, id: Long) = PendingIntent.getBroadcast(c, 1_000_000 + id.toInt(),
+        Intent(c, AlarmReceiver::class.java).putExtra("id", id).putExtra("kind", "stop"), F)
 
-    @SuppressLint("MissingPermission")
-    fun start(c: Context, t: Task) {
-        channels(c)
-        val stop = PendingIntent.getBroadcast(c, 1_000_000 + t.id.toInt(),
-            Intent(c, AlarmReceiver::class.java).putExtra("id", t.id).putExtra("kind", "stop"),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val n = NotificationCompat.Builder(c, "start").setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle(t.title).setContentText("حان وقت بدء المهمة • ${t.start.tm()} - ${t.end.tm()}")
-            .setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_CALL)
-            .setFullScreenIntent(open(c, t.id), true).setContentIntent(open(c, t.id)).setTimeoutAfter(60_000)
-            .addAction(0, "إيقاف الصوت", stop).addAction(0, "فتح التفاصيل", open(c, t.id)).build()
-        n.flags = n.flags or Notification.FLAG_INSISTENT // تكرار الرنين حتى الإيقاف أو انتهاء المهلة
-        c.getSystemService(NotificationManager::class.java).notify(t.id.toInt() * 2, n)
+    fun build(c: Context, t: Task, start: Boolean, silent: Boolean): Notification {
+        val ch = (if (start) "start" else "end") + (if (silent) "_s" else "")
+        val b = NotificationCompat.Builder(c, ch)
+            .setSmallIcon(if (start) android.R.drawable.ic_menu_call else android.R.drawable.ic_dialog_email)
+            .setContentTitle(if (start) t.title else "انتهى وقت المهمة")
+            .setContentText(if (start) "حان وقت بدء المهمة • ${t.start.tm()} - ${t.end.tm()}" else "${t.title} • ${t.end.tm()}")
+            .setContentIntent(open(c, t.id, true)).setAutoCancel(!start)
+        if (start) {
+            b.setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_CALL)
+                .setFullScreenIntent(open(c, t.id, false), true)
+                .addAction(0, "إيقاف الصوت", stopPi(c, t.id)).addAction(0, "فتح التفاصيل", open(c, t.id, true))
+            if (!silent) b.setTimeoutAfter(60_000)
+        } else b.setCategory(NotificationCompat.CATEGORY_MESSAGE)
+        val n = b.build()
+        if (start && !silent) n.flags = n.flags or Notification.FLAG_INSISTENT
+        return n
     }
-    @SuppressLint("MissingPermission")
-    fun end(c: Context, t: Task) {
-        channels(c)
-        val n = NotificationCompat.Builder(c, "end").setSmallIcon(android.R.drawable.ic_dialog_email)
-            .setContentTitle("انتهى وقت المهمة").setContentText("${t.title} • ${t.end.tm()}")
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE).setAutoCancel(true).setContentIntent(open(c, t.id)).build()
-        c.getSystemService(NotificationManager::class.java).notify(t.id.toInt() * 2 + 1, n)
-    }
+    fun show(c: Context, id: Int, n: Notification) = c.getSystemService(NotificationManager::class.java).notify(id, n)
 }
