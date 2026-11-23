@@ -20,6 +20,7 @@ class VM(private val app: Application) : AndroidViewModel(app) {
     private val d = AppDb.get(app).dao()
     val tasks = d.tasks().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val notes = d.notes().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val subs = d.subs().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val hist = d.hist().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private fun toast(s: String) = Toast.makeText(app, s, Toast.LENGTH_SHORT).show()
     private fun safe(block: suspend () -> Unit) = viewModelScope.launch(Dispatchers.IO) {
@@ -43,5 +44,7 @@ class VM(private val app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.Main) { toast("تم التأجيل إلى الغد") }
     }
     fun saveNote(n: Note) = safe { d.upsertNote(n) }
-    fun deleteNote(n: Note) = safe { d.deleteNote(n) }
+    fun deleteNote(n: Note) = safe { d.deleteSubsOf(n.id); d.deleteNote(n) }
+    fun saveSub(s: SubNote) = safe { d.upsertSub(s) }
+    fun deleteSub(s: SubNote) = safe { d.deleteSub(s) }
 }

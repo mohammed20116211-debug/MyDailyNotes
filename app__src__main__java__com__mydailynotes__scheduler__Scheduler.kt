@@ -11,16 +11,17 @@ object Scheduler {
         c, code, Intent(c, AlarmReceiver::class.java).putExtra("id", id).putExtra("kind", kind),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
+    private fun set(am: AlarmManager, at: Long, show: PendingIntent, p: PendingIntent) {
+        try { am.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), p) }
+        catch (e: SecurityException) { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p) } // بديل إذا لم يُمنح إذن الدقة
+    }
     fun schedule(c: Context, t: Task) {
         cancel(c, t.id)
         if (t.status == 2) return
         val am = c.getSystemService(AlarmManager::class.java); val now = System.currentTimeMillis()
         val show = PendingIntent.getActivity(c, 0, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        // setAlarmClock دقيق ومستثنى من قيود Doze ولا يحتاج إذن SCHEDULE_EXACT_ALARM
-        if (t.startAlarm && t.start > now)
-            am.setAlarmClock(AlarmManager.AlarmClockInfo(t.start, show), pi(c, t.id, "start", (t.id * 2).toInt()))
-        if (t.end > now) // يُجدول دائماً لتسجيل «انتهى وقتها»، والإشعار حسب خيار المهمة
-            am.setAlarmClock(AlarmManager.AlarmClockInfo(t.end, show), pi(c, t.id, "end", (t.id * 2 + 1).toInt()))
+        if (t.startAlarm && t.start > now) set(am, t.start, show, pi(c, t.id, "start", (t.id * 2).toInt()))
+        if (t.end > now) set(am, t.end, show, pi(c, t.id, "end", (t.id * 2 + 1).toInt()))
     }
     fun cancel(c: Context, id: Long) {
         val am = c.getSystemService(AlarmManager::class.java)
