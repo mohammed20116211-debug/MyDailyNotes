@@ -28,15 +28,20 @@ class AlarmService : Service() {
         h.postDelayed({ stopForeground(STOP_FOREGROUND_DETACH); stopSelf() }, if (ring) 60_000L else 4_000L)
         return START_NOT_STICKY
     }
+    @Suppress("DEPRECATION")
     private fun play(ring: Boolean) {
         try {
-            mp?.release()
-            val uri = RingtoneManager.getDefaultUri(if (ring) RingtoneManager.TYPE_RINGTONE else RingtoneManager.TYPE_NOTIFICATION)
-            mp = MediaPlayer().apply {
-                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-                setDataSource(this@AlarmService, uri); isLooping = ring; prepare(); start()
+            mp?.release(); mp = null
+            val vib = getSystemService(Vibrator::class.java)
+            val attr = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+            if (getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_NORMAL) {
+                val uri = RingtoneManager.getDefaultUri(if (ring) RingtoneManager.TYPE_RINGTONE else RingtoneManager.TYPE_NOTIFICATION)
+                mp = MediaPlayer().apply { setAudioAttributes(attr); setDataSource(this@AlarmService, uri); isLooping = ring; prepare(); start() }
+                if (ring) vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0), attr)
+            } else { // وضع الهزاز أو الصامت: اهتزاز فقط
+                vib.vibrate(if (ring) VibrationEffect.createWaveform(longArrayOf(0, 900, 500), 0)
+                            else VibrationEffect.createWaveform(longArrayOf(0, 300, 200, 300), -1), attr)
             }
-            if (ring) getSystemService(Vibrator::class.java).vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0))
         } catch (e: Throwable) { CrashLog.log(this, e) }
     }
     override fun onDestroy() {

@@ -5,6 +5,7 @@ import android.media.*
 import androidx.core.app.NotificationCompat
 import com.mydailynotes.data.Task
 import com.mydailynotes.receivers.AlarmReceiver
+import com.mydailynotes.ui.AlarmActivity
 import com.mydailynotes.ui.MainActivity
 import com.mydailynotes.ui.tm
 
@@ -15,7 +16,7 @@ object Notifier {
         nm.createNotificationChannel(NotificationChannel("start", "تنبيه البداية (احتياطي)", NotificationManager.IMPORTANCE_HIGH).apply {
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), ringAttr); enableVibration(true) })
         nm.createNotificationChannel(NotificationChannel("end", "تنبيه النهاية (احتياطي)", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()) })
+            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()); enableVibration(true) })
         nm.createNotificationChannel(NotificationChannel("start_s", "تنبيه بداية المهمة", NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null); enableVibration(false) })
         nm.createNotificationChannel(NotificationChannel("end_s", "تنبيه نهاية المهمة", NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null) })
     }
@@ -33,9 +34,12 @@ object Notifier {
             .setContentText(if (start) "حان وقت بدء المهمة • ${t.start.tm()} - ${t.end.tm()}" else "${t.title} • ${t.end.tm()}")
             .setContentIntent(open(c, t.id, true)).setAutoCancel(!start)
         if (start) {
+            val ringPi = PendingIntent.getActivity(c, t.id.toInt() + 4_000_000, Intent(c, AlarmActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("id", t.id).putExtra("title", t.title).putExtra("s", t.start).putExtra("e", t.end), F)
+            val who = androidx.core.app.Person.Builder().setName(t.title).setImportant(true).build()
             b.setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_CALL)
-                .setFullScreenIntent(open(c, t.id, false), true)
-                .addAction(0, "إيقاف الصوت", stopPi(c, t.id)).addAction(0, "فتح التفاصيل", open(c, t.id, true))
+                .setFullScreenIntent(ringPi, true).setContentIntent(ringPi)
+                .setStyle(NotificationCompat.CallStyle.forIncomingCall(who, stopPi(c, t.id), open(c, t.id, true)))
             if (!silent) b.setTimeoutAfter(60_000)
         } else b.setCategory(NotificationCompat.CATEGORY_MESSAGE)
         val n = b.build()

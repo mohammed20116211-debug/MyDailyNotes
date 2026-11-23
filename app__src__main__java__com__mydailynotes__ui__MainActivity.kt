@@ -14,6 +14,19 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import android.view.WindowManager
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -114,12 +127,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable fun Header(title: String, sub: String? = null) {
+@Composable fun Header(title: String, sub: String? = null, onBack: (() -> Unit)? = null) {
     Surface(color = Sky, shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Text(title, color = White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            if (sub != null) { Spacer(Modifier.height(6.dp))
-                Surface(shape = RoundedCornerShape(50), color = Yellow) { Text(sub, color = Deep, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp)) } }
+        Row(Modifier.padding(horizontal = 8.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع", tint = White) } else Spacer(Modifier.width(8.dp))
+            Column {
+                Text(title, color = White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (sub != null) { Spacer(Modifier.height(6.dp))
+                    Surface(shape = RoundedCornerShape(50), color = Yellow) { Text(sub, color = Deep, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp)) } }
+            }
         }
     }
 }
@@ -240,52 +256,59 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
         confirmButton = { TextButton({ if (t.isNotBlank()) onSave(t.trim()) }) { Text("حفظ") } }, dismissButton = { TextButton(onClose) { Text("إلغاء") } })
 }
 
-@Composable fun AddSub(onAdd: (String) -> Unit) {
-    var t by remember { mutableStateOf("") }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(t, { t = it }, Modifier.weight(1f), placeholder = { Text("ملاحظة فرعية جديدة") }, singleLine = true)
-        IconButton({ if (t.isNotBlank()) { onAdd(t.trim()); t = "" } }) { Icon(Icons.Default.Add, "إضافة", tint = Sky) }
-    }
-}
-
 @Composable fun NotesScreen(vm: VM) {
     val notes by vm.notes.collectAsState(); val subs by vm.subs.collectAsState()
-    var q by remember { mutableStateOf("") }; var title by remember { mutableStateOf("") }
-    val open = remember { mutableStateListOf<Long>() }
+    var openId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var q by remember { mutableStateOf("") }
+    var addNote by remember { mutableStateOf(false) }; var addSub by remember { mutableStateOf(false) }
     var editNote by remember { mutableStateOf<Note?>(null) }; var editSub by remember { mutableStateOf<SubNote?>(null) }; var delNote by remember { mutableStateOf<Note?>(null) }
-    val shown = notes.filter { n -> q.isBlank() || n.text.contains(q, true) || subs.any { it.noteId == n.id && it.text.contains(q, true) } }
-    Column {
-        Header("الملاحظات")
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), placeholder = { Text("بحث في الملاحظات") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true) }
-            item { Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(title, { title = it }, Modifier.weight(1f), placeholder = { Text("ملاحظة أساسية جديدة") }, singleLine = true)
-                IconButton({ if (title.isNotBlank()) { vm.saveNote(Note(text = title.trim(), date = System.currentTimeMillis())); title = "" } }) { Icon(Icons.Default.Add, "إضافة", tint = Sky) } } }
-            items(shown, key = { it.id }) { n ->
-                val mine = subs.filter { it.noteId == n.id }; val expanded = n.id in open || q.isNotBlank()
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = White, contentColor = Deep),
-                    border = BorderStroke(1.dp, if (expanded) Yellow else Sky.copy(alpha = 0.3f))) {
-                    Column {
-                        Row(Modifier.clickable { if (n.id in open) open.remove(n.id) else open.add(n.id) }.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = Sky)
-                            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                                Text(n.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("${mine.size} ملاحظة فرعية • ${n.date.ld()}", fontSize = 11.sp, modifier = Modifier.alpha(0.8f)) }
-                            IconButton({ editNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
-                            IconButton({ delNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
+    val cur = notes.firstOrNull { it.id == openId }
+    BackHandler(enabled = cur != null) { openId = null }
+    val cardColors = CardDefaults.cardColors(containerColor = White, contentColor = Deep)
+    val border = BorderStroke(1.dp, Sky.copy(alpha = 0.3f))
+    Box(Modifier.fillMaxSize()) {
+        if (cur == null) {
+            val shown = notes.filter { n -> q.isBlank() || n.text.contains(q, true) || subs.any { it.noteId == n.id && it.text.contains(q, true) } }
+            Column(Modifier.fillMaxSize()) {
+                Header("الملاحظات", "${notes.size} ملاحظة")
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item { OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), placeholder = { Text("بحث") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true) }
+                    if (shown.isEmpty()) item { Text(if (notes.isEmpty()) "لا توجد ملاحظات، اضغط + للإضافة" else "لا توجد نتائج", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center) }
+                    items(shown, key = { it.id }) { n ->
+                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = cardColors, border = border) {
+                            Row(Modifier.clickable { openId = n.id }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(n.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${subs.count { it.noteId == n.id }} ملاحظة فرعية • ${n.date.ld()}", fontSize = 11.sp, modifier = Modifier.alpha(0.8f)) }
+                                IconButton({ editNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
+                                IconButton({ delNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
+                            }
                         }
-                        if (expanded) Column(Modifier.padding(start = 14.dp, end = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            mine.forEach { s -> Row(Modifier.fillMaxWidth().background(SkyTint, RoundedCornerShape(10.dp)).padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    }
+                }
+            }
+        } else {
+            val mine = subs.filter { it.noteId == cur.id }
+            Column(Modifier.fillMaxSize()) {
+                Header(cur.text, "${mine.size} ملاحظة فرعية", onBack = { openId = null })
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (mine.isEmpty()) item { Text("لا توجد ملاحظات فرعية، اضغط + للإضافة", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center) }
+                    items(mine, key = { it.id }) { s ->
+                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = cardColors, border = border) {
+                            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(s.text, Modifier.weight(1f).padding(vertical = 6.dp), fontSize = 14.sp)
-                                IconButton({ editSub = s }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(16.dp)) }
-                                IconButton({ vm.deleteSub(s) }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(16.dp)) } } }
-                            AddSub { vm.saveSub(SubNote(noteId = n.id, text = it)) }
+                                IconButton({ editSub = s }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
+                                IconButton({ vm.deleteSub(s) }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
+                            }
                         }
                     }
                 }
             }
         }
+        FloatingActionButton({ if (cur == null) addNote = true else addSub = true }, Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = Yellow, contentColor = Deep) { Icon(Icons.Default.Add, "إضافة") }
     }
+    if (addNote) TextDlg("ملاحظة جديدة", "", { vm.saveNote(Note(text = it, date = System.currentTimeMillis())); addNote = false }, { addNote = false })
+    if (addSub && cur != null) TextDlg("ملاحظة فرعية جديدة", "", { vm.saveSub(SubNote(noteId = cur.id, text = it)); addSub = false }, { addSub = false })
     editNote?.let { n -> TextDlg("تعديل الملاحظة", n.text, { vm.saveNote(n.copy(text = it)); editNote = null }, { editNote = null }) }
     editSub?.let { s -> TextDlg("تعديل الملاحظة الفرعية", s.text, { vm.saveSub(s.copy(text = it)); editSub = null }, { editSub = null }) }
     delNote?.let { n -> AlertDialog({ delNote = null }, title = { Text("حذف الملاحظة") }, text = { Text("سيتم حذف «${n.text}» مع كل ملاحظاتها الفرعية.") },
@@ -300,6 +323,58 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
             items(h, key = { it.id }) { x -> Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = White, contentColor = Deep), border = BorderStroke(1.dp, Sky.copy(alpha = 0.3f))) {
                 Column(Modifier.padding(10.dp)) { Text("${x.op}: ${x.title}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text("${x.time.ldt().toLocalDate()} ${x.time.tm()}", fontSize = 12.sp); if (x.info.isNotBlank()) Text(x.info, fontSize = 11.sp) } } }
+        }
+    }
+}
+
+class AlarmActivity : ComponentActivity() {
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val id = intent.getLongExtra("id", -1); val title = intent.getStringExtra("title") ?: ""
+        val s = intent.getLongExtra("s", 0); val e = intent.getLongExtra("e", 0)
+        fun stopAll() {
+            stopService(Intent(this, AlarmService::class.java))
+            getSystemService(NotificationManager::class.java).cancel(id.toInt() * 2)
+        }
+        setContent {
+            MaterialTheme(colorScheme = scheme) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    AlarmScreen(title, s, e,
+                        onAccept = { stopAll(); startActivity(Intent(this@AlarmActivity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() },
+                        onStop = { stopAll(); finish() })
+                }
+            }
+        }
+    }
+}
+
+@Composable fun AlarmScreen(title: String, s: Long, e: Long, onAccept: () -> Unit, onStop: () -> Unit) {
+    val tr = rememberInfiniteTransition(label = "pulse")
+    val sc by tr.animateFloat(1f, 1.18f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "scale")
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Sky, Deep))).padding(horizontal = 24.dp, vertical = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("My Daily Notes", color = Yellow, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(48.dp))
+            Box(Modifier.size(110.dp).scale(sc).clip(CircleShape).background(Yellow), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Alarm, null, Modifier.size(56.dp), tint = Deep) }
+            Spacer(Modifier.height(40.dp))
+            Text(title, color = White, fontSize = 30.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(10.dp))
+            Text("حان وقت بدء المهمة", color = Yellow, fontSize = 18.sp)
+            Spacer(Modifier.height(10.dp))
+            Text("${s.tm()} – ${e.tm()} • ${dur(s, e)}", color = White, fontSize = 15.sp)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(onClick = onStop, modifier = Modifier.size(76.dp), shape = CircleShape, color = White) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.Close, "إيقاف", Modifier.size(36.dp), tint = Deep) } }
+                Spacer(Modifier.height(8.dp)); Text("إيقاف", color = White, fontSize = 15.sp)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(onClick = onAccept, modifier = Modifier.size(76.dp), shape = CircleShape, color = Yellow) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.Check, "موافق", Modifier.size(40.dp), tint = Deep) } }
+                Spacer(Modifier.height(8.dp)); Text("موافق", color = Yellow, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
