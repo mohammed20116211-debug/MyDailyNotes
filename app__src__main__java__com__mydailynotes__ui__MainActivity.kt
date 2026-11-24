@@ -278,8 +278,14 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
                         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = cardColors, border = border) {
                             Row(Modifier.clickable { openId = n.id }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
+                                    val mine = subs.filter { it.noteId == n.id }
                                     Text(n.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("${subs.count { it.noteId == n.id }} ملاحظة فرعية • ${n.date.ld()}", fontSize = 11.sp, modifier = Modifier.alpha(0.8f)) }
+                                    mine.take(3).forEach { sn ->
+                                        Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.size(5.dp).clip(CircleShape).background(Yellow)); Spacer(Modifier.width(6.dp))
+                                            Text(sn.text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.alpha(0.85f)) } }
+                                    Text(if (mine.size > 3) "+${mine.size - 3} أخرى • ${n.date.ld()}" else if (mine.isEmpty()) "بدون ملاحظات فرعية • ${n.date.ld()}" else "${n.date.ld()}",
+                                        fontSize = 11.sp, color = Sky, modifier = Modifier.padding(top = 3.dp)) }
                                 IconButton({ editNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
                                 IconButton({ delNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
                             }
@@ -293,13 +299,13 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
                 Header(cur.text, "${mine.size} ملاحظة فرعية", onBack = { openId = null })
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (mine.isEmpty()) item { Text("لا توجد ملاحظات فرعية، اضغط + للإضافة", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center) }
-                    items(mine, key = { it.id }) { s ->
-                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = cardColors, border = border) {
-                            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(s.text, Modifier.weight(1f).padding(vertical = 6.dp), fontSize = 14.sp)
-                                IconButton({ editSub = s }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
-                                IconButton({ vm.deleteSub(s) }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
-                            }
+                    itemsIndexed(mine, key = { _, x -> x.id }) { i, s ->
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(10.dp)).background(SkyTint), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.width(5.dp).fillMaxHeight().background(Yellow))
+                            Text("${i + 1}", color = Sky, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp))
+                            Text(s.text, Modifier.weight(1f).padding(vertical = 10.dp), fontSize = 14.sp)
+                            IconButton({ editSub = s }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(16.dp)) }
+                            IconButton({ vm.deleteSub(s) }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(16.dp)) }
                         }
                     }
                 }

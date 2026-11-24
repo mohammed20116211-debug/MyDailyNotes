@@ -11,6 +11,7 @@ import kotlinx.coroutines.*
 
 private fun ring(c: Context, t: Task, start: Boolean) {
     Notifier.channels(c)
+    if (!start) { Notifier.show(c, t.id.toInt() * 2 + 1, Notifier.build(c, t, false, false)); return }
     try {
         ContextCompat.startForegroundService(c, Intent(c, AlarmService::class.java).putExtra("id", t.id)
             .putExtra("kind", if (start) "start" else "end").putExtra("title", t.title).putExtra("s", t.start).putExtra("e", t.end))

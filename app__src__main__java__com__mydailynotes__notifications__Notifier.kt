@@ -17,6 +17,9 @@ object Notifier {
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), ringAttr); enableVibration(true) })
         nm.createNotificationChannel(NotificationChannel("end", "تنبيه النهاية (احتياطي)", NotificationManager.IMPORTANCE_DEFAULT).apply {
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()); enableVibration(true) })
+        nm.createNotificationChannel(NotificationChannel("end_msg", "تنبيه نهاية المهمة", NotificationManager.IMPORTANCE_HIGH).apply {
+            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build())
+            enableVibration(true); vibrationPattern = longArrayOf(0, 300, 200, 300) })
         nm.createNotificationChannel(NotificationChannel("start_s", "تنبيه بداية المهمة", NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null); enableVibration(false) })
         nm.createNotificationChannel(NotificationChannel("end_s", "تنبيه نهاية المهمة", NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null) })
     }
@@ -27,7 +30,7 @@ object Notifier {
         Intent(c, AlarmReceiver::class.java).putExtra("id", id).putExtra("kind", "stop"), F)
 
     fun build(c: Context, t: Task, start: Boolean, silent: Boolean): Notification {
-        val ch = (if (start) "start" else "end") + (if (silent) "_s" else "")
+        val ch = if (start) (if (silent) "start_s" else "start") else (if (silent) "end_s" else "end_msg")
         val b = NotificationCompat.Builder(c, ch)
             .setSmallIcon(if (start) android.R.drawable.ic_menu_call else android.R.drawable.ic_dialog_email)
             .setContentTitle(if (start) t.title else "انتهى وقت المهمة")
