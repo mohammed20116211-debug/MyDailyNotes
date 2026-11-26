@@ -4,7 +4,8 @@ plugins {
 }
 android {
     namespace = "com.mydailynotes"; compileSdk = 34
-    defaultConfig { applicationId = "com.mydailynotes"; minSdk = 26; targetSdk = 34; versionCode = 1; versionName = "1.0" }
+    defaultConfig { applicationId = "com.mydailynotes"; minSdk = 26; targetSdk = 34; versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1) + 100; versionName = "1.0" }
+    signingConfigs { getByName("debug") { storeFile = file("debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
