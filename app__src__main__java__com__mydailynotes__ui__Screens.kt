@@ -56,6 +56,8 @@ import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.BasicTextField
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.onFocusChanged
@@ -169,40 +171,53 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
     }
 }
 
-@Composable fun SubRow(s: SubNote, i: Int, reorder: Boolean, canUp: Boolean, canDown: Boolean, onSave: (String) -> Unit, onDelete: () -> Unit, onUp: () -> Unit, onDown: () -> Unit) {
+@Composable fun SubRow(s: SubNote, i: Int, reorder: Boolean, handle: Modifier, onSave: (String) -> Unit, onDelete: () -> Unit) {
     var text by remember(s.id) { mutableStateOf(s.text) }
     LaunchedEffect(text) { if (text.isNotBlank() && text != s.text) { delay(600); onSave(text) } }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(10.dp)).background(SkyTint), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(5.dp).fillMaxHeight().background(Yellow))
         Text("${i + 1}", color = Sky, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp))
         BasicTextField(text, { text = it }, Modifier.weight(1f).padding(vertical = 10.dp), textStyle = TextStyle(color = Deep, fontSize = 14.sp), cursorBrush = SolidColor(Sky))
-        if (reorder) {
-            IconButton(onUp, Modifier.size(32.dp), enabled = canUp) { Icon(Icons.Default.KeyboardArrowUp, "أعلى", Modifier.size(20.dp)) }
-            IconButton(onDown, Modifier.size(32.dp), enabled = canDown) { Icon(Icons.Default.KeyboardArrowDown, "أسفل", Modifier.size(20.dp)) }
-        } else IconButton(onDelete, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(16.dp)) }
+        if (reorder) Box(handle.size(44.dp), contentAlignment = Alignment.Center) { Icon(Icons.Default.DragHandle, "اسحب للترتيب", tint = Sky) }
+        else IconButton(onDelete, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(16.dp)) }
     }
 }
 
 @Composable fun DraftRow(n: Int, onAdd: (String) -> Unit) {
     var t by remember { mutableStateOf("") }
     fun commit() { if (t.isNotBlank()) { onAdd(t.trim()); t = "" } }
-    LaunchedEffect(t) { if (t.isNotBlank()) { delay(900); commit() } }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(10.dp)).background(SkyTint.copy(alpha = 0.6f)), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(5.dp).fillMaxHeight().background(Yellow.copy(alpha = 0.5f)))
         Text("$n", color = Sky.copy(alpha = 0.6f), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp))
-        BasicTextField(t, { t = it }, Modifier.weight(1f).padding(vertical = 10.dp).onFocusChanged { if (!it.isFocused) commit() },
+        BasicTextField(t, { t = it }, Modifier.weight(1f).padding(vertical = 10.dp), singleLine = true,
             textStyle = TextStyle(color = Deep, fontSize = 14.sp), cursorBrush = SolidColor(Sky),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { commit() }),
-            decorationBox = { inner -> if (t.isEmpty()) Text("اكتب ملاحظة فرعية هنا…", color = Sky.copy(alpha = 0.6f), fontSize = 14.sp); inner() })
+            decorationBox = { inner -> if (t.isEmpty()) Text("اكتب ملاحظة فرعية ثم Enter…", color = Sky.copy(alpha = 0.6f), fontSize = 14.sp); inner() })
+        if (t.isNotBlank()) Surface(onClick = { commit() }, shape = CircleShape, color = Yellow, modifier = Modifier.padding(horizontal = 6.dp).size(30.dp)) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, "إضافة", Modifier.size(18.dp), tint = Deep) } }
     }
 }
 
 @Composable fun NotesScreen(vm: VM) {
     val notes by vm.notes.collectAsState(); val subs by vm.subs.collectAsState()
     var openId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var q by remember { mutableStateOf("") }; var reorder by remember { mutableStateOf(false) }
+    var q by remember { mutableStateOf("") }; var reorder by remember { mutableStateOf(false) }; var dragging by remember { mutableStateOf(false) }
     var addNote by remember { mutableStateOf(false) }; var editNote by remember { mutableStateOf<Note?>(null) }; var delNote by remember { mutableStateOf<Note?>(null) }
     val cur = notes.firstOrNull { it.id == openId }
+    val mine = if (cur == null) emptyList() else subs.filter { it.noteId == cur.id }
+    var order by remember { mutableStateOf(notes) }
+    var subOrder by remember(cur?.id) { mutableStateOf(mine) }
+    LaunchedEffect(notes) { if (!dragging) order = notes }
+    LaunchedEffect(mine) { if (!dragging) subOrder = mine }
+    val mainState = rememberLazyListState(); val subState = rememberLazyListState()
+    val mainR = rememberReorderableLazyListState(mainState) { from, to ->
+        val fi = order.indexOfFirst { it.id == from.key }; val ti = order.indexOfFirst { it.id == to.key }
+        if (fi >= 0 && ti >= 0) order = order.toMutableList().apply { add(ti, removeAt(fi)) }
+    }
+    val subR = rememberReorderableLazyListState(subState) { from, to ->
+        val fi = subOrder.indexOfFirst { it.id == from.key }; val ti = subOrder.indexOfFirst { it.id == to.key }
+        if (fi >= 0 && ti >= 0) subOrder = subOrder.toMutableList().apply { add(ti, removeAt(fi)) }
+    }
     BackHandler(enabled = cur != null) { openId = null; reorder = false }
     val cardColors = CardDefaults.cardColors(containerColor = White, contentColor = Deep)
     val border = BorderStroke(1.dp, Sky.copy(alpha = 0.3f))
@@ -210,31 +225,32 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
     Box(Modifier.fillMaxSize()) {
         if (cur == null) {
             val rmode = reorder && q.isBlank()
-            val shown = notes.filter { n -> q.isBlank() || n.text.contains(q, true) || subs.any { it.noteId == n.id && it.text.contains(q, true) } }
+            val shown = order.filter { n -> q.isBlank() || n.text.contains(q, true) || subs.any { it.noteId == n.id && it.text.contains(q, true) } }
             Column(Modifier.fillMaxSize()) {
-                Header("الملاحظات", if (rmode) "وضع الترتيب: حرّك بالأسهم" else "${notes.size} ملاحظة", actions = sortBtn)
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), placeholder = { Text("بحث") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true) }
-                    if (shown.isEmpty()) item { Text(if (notes.isEmpty()) "لا توجد ملاحظات، اضغط + للإضافة" else "لا توجد نتائج", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center) }
+                Header("الملاحظات", if (rmode) "اسحب ≡ لأعلى أو لأسفل للترتيب" else "${notes.size} ملاحظة", actions = sortBtn)
+                LazyColumn(Modifier.weight(1f), state = mainState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item(key = "search") { OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), placeholder = { Text("بحث") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true) }
+                    if (shown.isEmpty()) item(key = "empty") { Text(if (notes.isEmpty()) "لا توجد ملاحظات، اضغط + للإضافة" else "لا توجد نتائج", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center) }
                     items(shown, key = { it.id }) { n ->
-                        val idx = notes.indexOfFirst { it.id == n.id }
-                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = cardColors, border = border) {
-                            Row(Modifier.clickable(enabled = !rmode) { openId = n.id }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    val mine = subs.filter { it.noteId == n.id }
-                                    Text(n.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    mine.take(3).forEach { sn ->
-                                        Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Box(Modifier.size(5.dp).clip(CircleShape).background(Yellow)); Spacer(Modifier.width(6.dp))
-                                            Text(sn.text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.alpha(0.85f)) } }
-                                    Text(if (mine.size > 3) "+${mine.size - 3} أخرى • ${n.date.ld()}" else if (mine.isEmpty()) "بدون ملاحظات فرعية • ${n.date.ld()}" else "${n.date.ld()}",
-                                        fontSize = 11.sp, color = Sky, modifier = Modifier.padding(top = 3.dp)) }
-                                if (rmode) {
-                                    IconButton({ vm.moveNote(notes, idx, -1) }, Modifier.size(34.dp), enabled = idx > 0) { Icon(Icons.Default.KeyboardArrowUp, "أعلى") }
-                                    IconButton({ vm.moveNote(notes, idx, 1) }, Modifier.size(34.dp), enabled = idx < notes.lastIndex) { Icon(Icons.Default.KeyboardArrowDown, "أسفل") }
-                                } else {
-                                    IconButton({ editNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
-                                    IconButton({ delNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
+                        ReorderableItem(mainR, key = n.id) { isDragging ->
+                            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = cardColors, border = border, elevation = CardDefaults.cardElevation(if (isDragging) 10.dp else 0.dp)) {
+                                Row(Modifier.clickable(enabled = !rmode) { openId = n.id }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        val ms = subs.filter { it.noteId == n.id }
+                                        Text(n.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        ms.take(3).forEach { sn ->
+                                            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Box(Modifier.size(5.dp).clip(CircleShape).background(Yellow)); Spacer(Modifier.width(6.dp))
+                                                Text(sn.text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.alpha(0.85f)) } }
+                                        Text(if (ms.size > 3) "+${ms.size - 3} أخرى • ${n.date.ld()}" else if (ms.isEmpty()) "بدون ملاحظات فرعية • ${n.date.ld()}" else "${n.date.ld()}",
+                                            fontSize = 11.sp, color = Sky, modifier = Modifier.padding(top = 3.dp)) }
+                                    if (rmode) {
+                                        val handle = Modifier.draggableHandle(onDragStarted = { dragging = true }, onDragStopped = { dragging = false; vm.saveNoteOrder(order) })
+                                        Box(handle.size(48.dp), contentAlignment = Alignment.Center) { Icon(Icons.Default.DragHandle, "اسحب للترتيب", tint = Sky) }
+                                    } else {
+                                        IconButton({ editNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "تعديل", Modifier.size(18.dp)) }
+                                        IconButton({ delNote = n }, Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "حذف", Modifier.size(18.dp)) }
+                                    }
                                 }
                             }
                         }
@@ -243,14 +259,17 @@ fun dayLabel(d: LocalDate, today: LocalDate) = when (d) {
             }
             FloatingActionButton({ addNote = true }, Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = Yellow, contentColor = Deep) { Icon(Icons.Default.Add, "إضافة") }
         } else {
-            val mine = subs.filter { it.noteId == cur.id }
             Column(Modifier.fillMaxSize()) {
-                Header(cur.text, if (reorder) "وضع الترتيب: حرّك بالأسهم" else "${mine.size} ملاحظة فرعية", onBack = { openId = null; reorder = false }, actions = sortBtn)
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    itemsIndexed(mine, key = { _, x -> x.id }) { i, s ->
-                        SubRow(s, i, reorder, i > 0, i < mine.lastIndex, { vm.saveSub(s.copy(text = it)) }, { vm.deleteSub(s) }, { vm.moveSub(mine, i, -1) }, { vm.moveSub(mine, i, 1) })
+                Header(cur.text, if (reorder) "اسحب ≡ لأعلى أو لأسفل للترتيب" else "${subOrder.size} ملاحظة فرعية", onBack = { openId = null; reorder = false }, actions = sortBtn)
+                LazyColumn(Modifier.weight(1f), state = subState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(subOrder, key = { it.id }) { s ->
+                        val i = subOrder.indexOfFirst { it.id == s.id }
+                        ReorderableItem(subR, key = s.id) { _ ->
+                            val handle = Modifier.draggableHandle(onDragStarted = { dragging = true }, onDragStopped = { dragging = false; vm.saveSubOrder(subOrder) })
+                            SubRow(s, i, reorder, handle, { vm.saveSub(s.copy(text = it)) }, { vm.deleteSub(s) })
+                        }
                     }
-                    item(key = "draft") { DraftRow(mine.size + 1) { vm.saveSub(SubNote(noteId = cur.id, text = it)) } }
+                    item(key = "draft") { DraftRow(subOrder.size + 1) { vm.saveSub(SubNote(noteId = cur.id, text = it)) } }
                 }
             }
         }

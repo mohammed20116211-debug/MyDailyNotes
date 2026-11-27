@@ -64,6 +64,9 @@ class VM(private val app: Application) : AndroidViewModel(app) {
         l.forEachIndexed { k, n -> if (n.pos != k) d.upsertSub(n.copy(pos = k)) }
     }
 
+    fun saveNoteOrder(l: List<Note>) = safe { db.withTransaction { l.forEachIndexed { k, n -> if (n.pos != k) d.upsertNote(n.copy(pos = k)) } } }
+    fun saveSubOrder(l: List<SubNote>) = safe { db.withTransaction { l.forEachIndexed { k, n -> if (n.pos != k) d.upsertSub(n.copy(pos = k)) } } }
+
     // ---- نسخ احتياطي واستعادة
     fun export(uri: Uri) = safe {
         val o = JSONObject().put("app", "MyDailyNotes").put("version", 1).put("time", System.currentTimeMillis())
